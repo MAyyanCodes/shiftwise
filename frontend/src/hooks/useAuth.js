@@ -12,7 +12,6 @@ export function AuthProvider({ children }) {
     const token  = localStorage.getItem('sw_token');
     if (stored && token) {
       setUser(JSON.parse(stored));
-      // Verify token is still valid
       api.get('/auth/me')
         .then(res => setUser(res.data))
         .catch(() => logout())
@@ -32,10 +31,17 @@ export function AuthProvider({ children }) {
 
   const signup = async (data) => {
     const res = await api.post('/auth/signup', data);
+
+    // 202 = manager pending approval, no token issued yet
+    if (res.status === 202) {
+      return { pending: true, message: res.data.message };
+    }
+
+    // 201 = created successfully, token issued
     localStorage.setItem('sw_token', res.data.token);
     localStorage.setItem('sw_user', JSON.stringify(res.data.user));
     setUser(res.data.user);
-    return res.data.user;
+    return { pending: false, user: res.data.user };
   };
 
   const logout = () => {

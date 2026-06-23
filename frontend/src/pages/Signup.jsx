@@ -10,7 +10,8 @@ export default function Signup() {
   const [form, setForm] = useState({
     first_name: '', last_name: '', username: '', email: '', password: '', confirm: ''
   });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]     = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -30,9 +31,15 @@ export default function Signup() {
     setLoading(true);
     try {
       const { confirm, ...data } = form;
-      await signup(data);
-      toast.success('Account created! Welcome to ShiftWise.');
-      navigate('/dashboard');
+      const result = await signup({ ...data, role: 'manager' });
+
+      if (result.pending) {
+        toast.success('Request submitted! Waiting for admin approval.', { duration: 6000 });
+        setSubmitted(true);
+      } else {
+        toast.success('Account created! Welcome to ShiftWise.');
+        navigate('/dashboard');
+      }
     } catch (err) {
       toast.error(err.response?.data?.error || 'Signup failed');
     } finally {
@@ -59,56 +66,73 @@ export default function Signup() {
           <p>Create a Manager Account</p>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">First Name</label>
-              <input className="form-input" placeholder="John" {...f('first_name')} />
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Last Name</label>
-              <input className="form-input" placeholder="Doe" {...f('last_name')} />
-            </div>
+        {submitted ? (
+          <div style={{ textAlign: 'center', padding: '20px 0' }}>
+            <div style={{ fontSize: '3rem', marginBottom: 12 }}>⏳</div>
+            <h3 style={{ color: 'var(--accent)', marginBottom: 8 }}>Request Submitted!</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+              Your manager account is pending admin approval.<br />
+              You'll be able to log in once approved.
+            </p>
+            <Link to="/login" style={{ color: 'var(--accent)', fontWeight: 600, marginTop: 16, display: 'block' }}>
+              Back to Login
+            </Link>
           </div>
-
-          <div className="form-group mt-2">
-            <label className="form-label">Username</label>
-            <input className="form-input" placeholder="johndoe" {...f('username')} />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Email</label>
-            <input className="form-input" type="email" placeholder="john@company.com" {...f('email')} />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Password</label>
-              <input className="form-input" type="password" placeholder="Min 8 chars" {...f('password')} />
+        ) : (
+          <form onSubmit={handleSubmit}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">First Name</label>
+                <input className="form-input" placeholder="John" {...f('first_name')} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Last Name</label>
+                <input className="form-input" placeholder="Doe" {...f('last_name')} />
+              </div>
             </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Confirm</label>
-              <input className="form-input" type="password" placeholder="Repeat" {...f('confirm')} />
+
+            <div className="form-group mt-2">
+              <label className="form-label">Username</label>
+              <input className="form-input" placeholder="johndoe" {...f('username')} />
             </div>
-          </div>
 
-          <button
-            type="submit"
-            className="btn btn-primary w-full"
-            style={{ justifyContent: 'center', marginTop: 20, height: 44 }}
-            disabled={loading}
-          >
-            {loading ? <div className="spinner" /> : <><UserPlus size={16} /> Create Manager Account</>}
-          </button>
-        </form>
+            <div className="form-group">
+              <label className="form-label">Email</label>
+              <input className="form-input" type="email" placeholder="john@company.com" {...f('email')} />
+            </div>
 
-        <div className="auth-divider">already have an account?</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Password</label>
+                <input className="form-input" type="password" placeholder="Min 8 chars" {...f('password')} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Confirm</label>
+                <input className="form-input" type="password" placeholder="Repeat" {...f('confirm')} />
+              </div>
+            </div>
 
-        <p style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-          <Link to="/login" style={{ color: 'var(--accent)', fontWeight: 600 }}>
-            Sign in instead
-          </Link>
-        </p>
+            <button
+              type="submit"
+              className="btn btn-primary w-full"
+              style={{ justifyContent: 'center', marginTop: 20, height: 44 }}
+              disabled={loading}
+            >
+              {loading ? <div className="spinner" /> : <><UserPlus size={16} /> Create Manager Account</>}
+            </button>
+          </form>
+        )}
+
+        {!submitted && (
+          <>
+            <div className="auth-divider">already have an account?</div>
+            <p style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              <Link to="/login" style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                Sign in instead
+              </Link>
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

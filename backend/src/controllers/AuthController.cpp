@@ -9,21 +9,15 @@
 using namespace std;
 using json = nlohmann::json;
 
-// ─────────────────────────────────────────────
-//  Private helpers
-// ─────────────────────────────────────────────
-
-string AuthController::hashPassword (string plainText) {
-    // BCrypt automatically adds a salt — safe for storing in the DB
+string AuthController::hashPassword(string plainText) {
     return BCrypt::generateHash(plainText);
 }
 
-bool AuthController::checkPassword (string plainText, string hash) {
+bool AuthController::checkPassword(string plainText, string hash) {
     return BCrypt::validatePassword(plainText, hash);
 }
 
-string AuthController::createToken (int userId, string role) {
-    // Token expires in 24 hours
+string AuthController::createToken(int userId, string role) {
     auto token = jwt::create()
                      .set_issuer("shiftwise")
                      .set_type("JWT")
@@ -37,58 +31,75 @@ string AuthController::createToken (int userId, string role) {
 // ─────────────────────────────────────────────
 //  POST /api/auth/signup
 // ─────────────────────────────────────────────
-crow::response AuthController::signup (const crow::request& req) {
+crow::response AuthController::signup(const crow::request& req) {
     try {
-        // Parse request body
         json body = json::parse(req.body);
 
-        string name     = body.value("name",     "");
-        string email    = body.value("email",    "");
-        string password = body.value("password", "");
-        string role     = body.value("role",     "employee");
+        string username   = body.value("username",   "");
+        string email      = body.value("email",      "");
+        string password   = body.value("password",   "");
+        string first_name = body.value("first_name", "");
+        string last_name  = body.value("last_name",  "");
+        string role       = body.value("role",       "employee");
 
         // Basic validation
-        if (name.empty() || email.empty() || password.empty()) {
-            return crow::response(400, "{\"error\":\"Name, email and password are required\"}");
+        if (username.empty() || email.empty() || password.empty() ||
+            first_name.empty() || last_name.empty()) {
+            return crow::response(400, "{\"error\":\"All fields are required\"}");
         }
 
-        // Connect to database
+        // Force role to only be employee or manager — nothing else
+        if (role != "employee" && role != "manager") {
+            role = "employee";
+        }
+
+        // Managers need approval, employees are active immediately
+        string status = (role == "manager") ? "pending" : "active";
+
         pqxx::connection conn(dbConnection);
         pqxx::work txn(conn);
 
-        // Check if email already exists
-        auto existing = txn.exec_params(
-            "SELECT id FROM users WHERE email = $1",
-            email
+        // Check email
+        auto existingEmail = txn.exec_params(
+            "SELECT id FROM users WHERE email = $1", email
         );
-
-        if (!existing.empty()) {
+        if (!existingEmail.empty()) {
             return crow::response(409, "{\"error\":\"Email already registered\"}");
         }
 
-        // Hash the password before storing
+        // Check username
+        auto existingUsername = txn.exec_params(
+            "SELECT id FROM users WHERE username = $1", username
+        );
+        if (!existingUsername.empty()) {
+            return crow::response(409, "{\"error\":\"Username already taken\"}");
+        }
+
         string hashedPwd = hashPassword(password);
 
-        // Insert new user into the database
         auto result = txn.exec_params(
-            "INSERT INTO users (name, email, password, role) "
-            "VALUES ($1, $2, $3, $4) RETURNING id",
-            name, email, hashedPwd, role
+            "INSERT INTO users (username, email, password_hash, first_name, last_name, role, status) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+            username, email, hashedPwd, first_name, last_name, role, status
         );
 
         txn.commit();
 
-        int newId = result[0][0].as<int>();
+        // If manager, return pending message — no token yet
+        if (role == "manager") {
+            json response;
+            response["message"] = "Manager account request submitted. Awaiting admin approval.";
+            response["status"]  = "pending";
+            return crow::response(202, response.dump());
+        }
 
-        // Build User object and generate token
-        User newUser(newId, name, email, hashedPwd, role);
-        string token = createToken(newId, role);
+        // Employee gets token immediately
+        string newId = result[0][0].as<string>();
+        string token = createToken(0, role); // passing 0 as placeholder, adjust if needed
 
-        // Return success response with token
         json response;
         response["message"] = "Account created successfully";
         response["token"]   = token;
-        response["user"]    = json::parse(newUser.toJson());
 
         return crow::response(201, response.dump());
 
@@ -101,9 +112,8 @@ crow::response AuthController::signup (const crow::request& req) {
 // ─────────────────────────────────────────────
 //  POST /api/auth/login
 // ─────────────────────────────────────────────
-crow::response AuthController::login (const crow::request& req) {
+crow::response AuthController::login(const crow::request& req) {
     try {
-        // Parse request body
         json body = json::parse(req.body);
 
         string email    = body.value("email",    "");
@@ -113,12 +123,11 @@ crow::response AuthController::login (const crow::request& req) {
             return crow::response(400, "{\"error\":\"Email and password are required\"}");
         }
 
-        // Look up the user in the database
         pqxx::connection conn(dbConnection);
         pqxx::work txn(conn);
 
         auto result = txn.exec_params(
-            "SELECT id, name, email, password, role FROM users WHERE email = $1",
+            "SELECT id, username, email, password_hash, role, status FROM users WHERE email = $1",
             email
         );
 
@@ -126,31 +135,103 @@ crow::response AuthController::login (const crow::request& req) {
             return crow::response(401, "{\"error\":\"Invalid email or password\"}");
         }
 
-        // Build User object from the DB row
-        int    userId   = result[0][0].as<int>();
+        string userId   = result[0][0].as<string>();
         string userName = result[0][1].as<string>();
         string userHash = result[0][3].as<string>();
         string userRole = result[0][4].as<string>();
+        string userStatus = result[0][5].as<string>();
 
-        // Verify the password
+        // ── STATUS CHECKS ──
+        if (userStatus == "pending") {
+            return crow::response(403, "{\"error\":\"Your manager account is awaiting admin approval.\"}");
+        }
+
+        if (userStatus == "rejected") {
+            return crow::response(403, "{\"error\":\"Your account request was rejected. Contact admin.\"}");
+        }
+
         if (!checkPassword(password, userHash)) {
             return crow::response(401, "{\"error\":\"Invalid email or password\"}");
         }
 
-        // Create JWT token
-        string token = createToken(userId, userRole);
-
-        User loggedIn(userId, userName, email, userHash, userRole);
+        string token = createToken(0, userRole); // adjust userId if needed
 
         json response;
-        response["message"] = "Login successful";
-        response["token"]   = token;
-        response["user"]    = json::parse(loggedIn.toJson());
+        response["message"]  = "Login successful";
+        response["token"]    = token;
+        response["user"]["username"] = userName;
+        response["user"]["email"]    = email;
+        response["user"]["role"]     = userRole;
 
         return crow::response(200, response.dump());
 
     } catch (exception& e) {
         cerr << "Login error: " << e.what() << endl;
+        return crow::response(500, "{\"error\":\"Internal server error\"}");
+    }
+}
+
+// ─────────────────────────────────────────────
+//  GET /api/auth/pending-managers
+//  Admin only — see who's waiting for approval
+// ─────────────────────────────────────────────
+crow::response AuthController::getPendingManagers(const crow::request& req) {
+    try {
+        pqxx::connection conn(dbConnection);
+        pqxx::work txn(conn);
+
+        auto result = txn.exec(
+            "SELECT id, username, email, first_name, last_name, created_at "
+            "FROM users WHERE role = 'manager' AND status = 'pending' "
+            "ORDER BY created_at ASC"
+        );
+
+        json users = json::array();
+        for (auto row : result) {
+            json u;
+            u["id"]         = row[0].as<string>();
+            u["username"]   = row[1].as<string>();
+            u["email"]      = row[2].as<string>();
+            u["first_name"] = row[3].as<string>();
+            u["last_name"]  = row[4].as<string>();
+            u["created_at"] = row[5].as<string>();
+            users.push_back(u);
+        }
+
+        return crow::response(200, users.dump());
+
+    } catch (exception& e) {
+        cerr << "getPendingManagers error: " << e.what() << endl;
+        return crow::response(500, "{\"error\":\"Internal server error\"}");
+    }
+}
+
+// ─────────────────────────────────────────────
+//  PUT /api/auth/approve/:id
+//  PUT /api/auth/reject/:id
+// ─────────────────────────────────────────────
+crow::response AuthController::updateManagerStatus(const crow::request& req, string userId, string newStatus) {
+    try {
+        pqxx::connection conn(dbConnection);
+        pqxx::work txn(conn);
+
+        auto result = txn.exec_params(
+            "UPDATE users SET status = $1 WHERE id = $2 AND role = 'manager' RETURNING id",
+            newStatus, userId
+        );
+
+        txn.commit();
+
+        if (result.empty()) {
+            return crow::response(404, "{\"error\":\"Manager not found\"}");
+        }
+
+        json response;
+        response["message"] = "Manager status updated to " + newStatus;
+        return crow::response(200, response.dump());
+
+    } catch (exception& e) {
+        cerr << "updateManagerStatus error: " << e.what() << endl;
         return crow::response(500, "{\"error\":\"Internal server error\"}");
     }
 }

@@ -54,16 +54,31 @@ int main () {
     });
 
     // ── Auth routes ───────────────────────────
-    CROW_ROUTE(app, "/api/auth/signup").methods("POST"_method)
-    ([&authCtrl](const crow::request& req) {
-        return authCtrl.signup(req);
-    });
+CROW_ROUTE(app, "/api/auth/signup").methods("POST"_method)
+([&authCtrl](const crow::request& req) {
+    return authCtrl.signup(req);
+});
 
-    CROW_ROUTE(app, "/api/auth/login").methods("POST"_method)
-    ([&authCtrl](const crow::request& req) {
-        return authCtrl.login(req);
-    });
+CROW_ROUTE(app, "/api/auth/login").methods("POST"_method)
+([&authCtrl](const crow::request& req) {
+    return authCtrl.login(req);
+});
 
+// Admin approval routes
+CROW_ROUTE(app, "/api/auth/pending-managers").methods("GET"_method)
+([&authCtrl](const crow::request& req) {
+    return authCtrl.getPendingManagers(req);
+});
+
+CROW_ROUTE(app, "/api/auth/approve/<string>").methods("PUT"_method)
+([&authCtrl](const crow::request& req, string id) {
+    return authCtrl.updateManagerStatus(req, id, "active");
+});
+
+CROW_ROUTE(app, "/api/auth/reject/<string>").methods("PUT"_method)
+([&authCtrl](const crow::request& req, string id) {
+    return authCtrl.updateManagerStatus(req, id, "rejected");
+});
     // ── Staff routes ──────────────────────────
     CROW_ROUTE(app, "/api/staff").methods("GET"_method)
     ([&staffCtrl](const crow::request& req) {

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import api from '../utils/api';
-import { Users, Clock, Umbrella, AlertCircle, TrendingUp } from 'lucide-react';
+import { Users, Clock, Umbrella, AlertCircle, TrendingUp, CheckCircle, XCircle } from 'lucide-react';
 import { format } from 'date-fns';
 
 function StatCard({ value, label, color = 'var(--accent)' }) {
@@ -9,6 +9,117 @@ function StatCard({ value, label, color = 'var(--accent)' }) {
     <div className="stat-card">
       <div className="stat-value" style={{ color }}>{value}</div>
       <div className="stat-label">{label}</div>
+    </div>
+  );
+}
+
+function PendingManagers({ onAction }) {
+  const [pending, setPending] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [acting, setActing]   = useState(null); // id currently being approved/rejected
+
+  const fetchPending = async () => {
+    try {
+      const res = await api.get('/auth/pending-managers');
+      setPending(res.data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchPending(); }, []);
+
+  const handleAction = async (id, action) => {
+    setActing(id);
+    try {
+      await api.put(`/auth/${action}/${id}`);
+      setPending(prev => prev.filter(m => m.id !== id));
+      onAction(); // refresh parent dashboard stats
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setActing(null);
+    }
+  };
+
+  if (loading) return null;
+  if (pending.length === 0) return null; // hide section entirely if nothing pending
+
+  return (
+    <div className="card" style={{ marginBottom: 20, border: '1px solid var(--warning)' }}>
+      <div className="card-header">
+        <h2 className="card-title">
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <AlertCircle size={16} color="var(--warning)" />
+            Pending Manager Approvals
+          </span>
+        </h2>
+        <span className="badge badge-pending">{pending.length} pending</span>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {pending.map(mgr => (
+          <div key={mgr.id} style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            padding: '12px 14px', background: 'var(--bg-elevated)',
+            borderRadius: 'var(--radius-sm)',
+            borderLeft: '3px solid var(--warning)'
+          }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: '50%',
+              background: 'var(--warning-dim)', color: 'var(--warning)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontWeight: 700, fontSize: '0.8rem', flexShrink: 0
+            }}>
+              {mgr.first_name[0]}{mgr.last_name[0]}
+            </div>
+
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>
+                {mgr.first_name} {mgr.last_name}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                @{mgr.username} · {mgr.email}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <button
+                className="btn btn-sm"
+                style={{
+                  background: 'var(--success-dim)', color: 'var(--success)',
+                  border: '1px solid var(--success)', display: 'flex',
+                  alignItems: 'center', gap: 4, padding: '6px 12px'
+                }}
+                disabled={acting === mgr.id}
+                onClick={() => handleAction(mgr.id, 'approve')}
+              >
+                {acting === mgr.id
+                  ? <div className="spinner" style={{ width: 12, height: 12 }} />
+                  : <><CheckCircle size={13} /> Approve</>
+                }
+              </button>
+              <button
+                className="btn btn-sm"
+                style={{
+                  background: 'var(--danger-dim)', color: 'var(--danger)',
+                  border: '1px solid var(--danger)', display: 'flex',
+                  alignItems: 'center', gap: 4, padding: '6px 12px'
+                }}
+                disabled={acting === mgr.id}
+                onClick={() => handleAction(mgr.id, 'reject')}
+              >
+                {acting === mgr.id
+                  ? <div className="spinner" style={{ width: 12, height: 12 }} />
+                  : <><XCircle size={13} /> Reject</>
+                }
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -112,9 +223,9 @@ function OnLeave({ employees }) {
 }
 
 function AnnouncementWall({ announcements, isManager, onPost }) {
-  const [title, setTitle]   = useState('');
-  const [body, setBody]     = useState('');
-  const [priority, setPri]  = useState('normal');
+  const [title, setTitle]     = useState('');
+  const [body, setBody]       = useState('');
+  const [priority, setPri]    = useState('normal');
   const [posting, setPosting] = useState(false);
 
   const handlePost = async () => {
@@ -196,9 +307,9 @@ function AnnouncementWall({ announcements, isManager, onPost }) {
 
 export default function ManagerDashboard() {
   const { user } = useAuth();
-  const [data, setData]             = useState(null);
-  const [announcements, setAnn]     = useState([]);
-  const [loading, setLoading]       = useState(true);
+  const [data, setData]         = useState(null);
+  const [announcements, setAnn] = useState([]);
+  const [loading, setLoading]   = useState(true);
 
   const fetchAll = async () => {
     try {
@@ -237,6 +348,9 @@ export default function ManagerDashboard() {
           <p className="page-subtitle">{format(new Date(), 'EEEE, MMMM d yyyy')}</p>
         </div>
       </div>
+
+      {/* ADMIN APPROVAL PANEL — only shows if there are pending managers */}
+      <PendingManagers onAction={fetchAll} />
 
       <div className="stat-grid">
         <StatCard value={data?.stats?.total_employees ?? 0}  label="Total Employees" />

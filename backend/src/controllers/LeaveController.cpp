@@ -1,5 +1,6 @@
 #include "../include/middleware/AuthMiddleware.h"
 #include <crow.h>
+#include <jwt-cpp/jwt.h>
 #include <pqxx/pqxx>
 #include <nlohmann/json.hpp>
 #include <iostream>

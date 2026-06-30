@@ -62,7 +62,7 @@ public:
             );
 
             json list = json::array();
-            for (auto& row : rows) {
+            for (const auto& row : rows) {
                 json req_obj;
                 req_obj["id"]        = row[0].as<int>();
                 req_obj["staffName"] = row[1].as<string>();
@@ -106,7 +106,7 @@ public:
             );
 
             json list = json::array();
-            for (auto& row : rows) {
+            for (const auto& row : rows) {
                 json entry;
                 entry["id"]        = row[0].as<int>();
                 entry["startDate"] = row[1].as<string>();

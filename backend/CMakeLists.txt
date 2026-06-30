@@ -55,12 +55,13 @@ add_executable(shiftwise ${SOURCES})
 target_include_directories(shiftwise PRIVATE
     include
     ${PQXX_INCLUDE_DIRS}
+    ${bcrypt_SOURCE_DIR}/include
 )
-
 target_link_libraries(shiftwise PRIVATE
     Crow::Crow
     nlohmann_json::nlohmann_json
     jwt-cpp::jwt-cpp
+    bcrypt
     ${PQXX_LIBRARIES}
 )
 

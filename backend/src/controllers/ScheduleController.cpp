@@ -1,6 +1,7 @@
 #include "../include/middleware/AuthMiddleware.h"
 #include "../include/models/Shift.h"
 #include <crow.h>
+#include <jwt-cpp/jwt.h>
 #include <pqxx/pqxx>
 #include <nlohmann/json.hpp>
 #include <iostream>
@@ -60,7 +61,7 @@ public:
             );
 
             json list = json::array();
-            for (auto& row : rows) {
+            for (const auto& row : rows) {
                 json shift;
                 shift["id"]        = row[0].as<int>();
                 shift["staffName"] = row[1].as<string>();
@@ -104,7 +105,7 @@ public:
             );
 
             json list = json::array();
-            for (auto& row : rows) {
+            for (const auto& row : rows) {
                 json shift;
                 shift["id"]        = row[0].as<int>();
                 shift["date"]      = row[1].as<string>();
